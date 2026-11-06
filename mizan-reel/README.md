@@ -10,8 +10,8 @@ with a 100% Moroccan-Darija voiceover.
 | # | time | scene | VO |
 |---|------|-------|----|
 | 1 | 0:00–0:08 | Hook — man at his desk at night, phone in hand | «شحال من مرة قلتي لراسك: من غدا نبدّل؟» |
-| 2 | 0:08–0:14 | The problem — intention vs. follow-through | «المشكل ماشي فالنية… المشكل فالمتابعة.» |
-| 3 | 0:14–0:23 | The laptop screen boots into the real app, light sweep | «هاذي هي ميزان تراكر…» |
+| 2 | 0:08–0:14 | Laptop scene, reference framing — the app is **inside the screen**, screenshot captions | «المشكل ماشي فالنية… المشكل فالمتابعة.» |
+| 3 | 0:14–0:23 | Same laptop, screen lit + light sweep, no floating UI cards | «هاذي هي ميزان تراكر…» |
 | 4 | 0:23–0:34 | Camera tour of the dashboard (ring, prayers, streak) | «كل نهار كيبين ليك فين نتا واصل…» |
 | 5 | 0:34–0:44 | 5 minutes on cream editorial, then the monthly competition | «غير خمس دقايق… تربح شهر مجاني ديال ميزان برو.» |
 | 6 | 0:44–0:53 | CTA — mizantracker.online + @mizan.tracker | «دخل دابا ل ميزان تراكر دوت أونلاين.» |
