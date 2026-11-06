@@ -199,6 +199,84 @@ def logo_lock(im, cx, cy, scale=1.0, alpha=1.0, mark=True, tagline=True):
         put(im, s, cx, cy + 108 * scale, alpha=a * 0.95)
 
 
+# ---------------------------------------------------------------- subtitles
+# Screenshot-style burned-in lines: bold Cairo, heavy white with a dark stroke,
+# the stressed word in gold, stacked and left-aligned inside a safe area.
+SUB_SAFE_L, SUB_SAFE_R = 60, 1020
+SUB_TOP = 1240
+
+
+def _sub_sprite(words):
+    """words: list of (text, is_gold). Renders one line at the max size that fits."""
+    size = 76
+    while size > 40:
+        sprs = [(spr_ar(w, size, GOLD if g else WHITE), g) for w, g in words]
+        gap = int(size * 0.26)
+        total = sum(x.size[0] for x, _ in sprs) + gap * (len(sprs) - 1)
+        if total <= SUB_SAFE_R - SUB_SAFE_L:
+            break
+        size -= 4
+    gap = int(size * 0.26)
+    h = max(x.size[1] for x, _ in sprs)
+    w = sum(x.size[0] for x, _ in sprs) + gap * (len(sprs) - 1)
+    line = Image.new("RGBA", (w + 24, h + 24), (0, 0, 0, 0))
+    x = w + 12
+    for spr, g in sprs:
+        x -= spr.size[0]
+        line.alpha_composite(spr, (x, 12 + (h - spr.size[1]) // 2))
+        x -= gap
+    return line
+
+
+def _stroke(img, width=5, color=(3, 18, 13)):
+    a = img.getchannel("A")
+    pad = width + 3
+    big = Image.new("L", (img.size[0] + pad * 2, img.size[1] + pad * 2), 0)
+    big.paste(a, (pad, pad))
+    grown = big
+    for _ in range(width):
+        grown = grown.filter(ImageFilter.MaxFilter(3))
+    sh = Image.new("RGBA", big.size, tuple(color) + (255,))
+    sh.putalpha(grown)
+    out = Image.new("RGBA", big.size, (0, 0, 0, 0))
+    out.alpha_composite(sh)
+    out.alpha_composite(img, (pad, pad))
+    return out
+
+
+def subtitle(im, lines, alpha=1.0, dy=0.0, reveal=1.0):
+    """Screenshot-style stacked lines; words appear progressively (karaoke)."""
+    if alpha <= 0.01:
+        return
+    sprs = [_sub_sprite(words) for words in lines]
+    total_words = sum(len(w) for w in lines)
+    seen = 0
+    y = SUB_TOP + dy
+    for spr, words in zip(sprs, lines):
+        base = _stroke(spr, 5)
+        k = clamp(reveal * total_words - seen, 0, len(words))
+        if k <= 0.001:
+            seen += len(words)
+            y += spr.size[1] - 6
+            continue
+        if k < len(words):
+            frac = k / len(words)
+            mask = Image.new("L", base.size, 0)
+            xi = base.size[0] - int(base.size[0] * frac)
+            ImageDraw.Draw(mask).rectangle([xi, 0, base.size[0], base.size[1]], fill=255)
+            base.putalpha(Image.composite(base.getchannel("A"),
+                                          Image.new("L", base.size, 0), mask))
+        if alpha < 1:
+            base.putalpha(base.getchannel("A").point(lambda v: int(v * alpha)))
+        # right-align on the text edge (base adds the stroke padding)
+        stroke_pad = 8
+        x_right = SUB_SAFE_R - (spr.size[0] - 12) - stroke_pad
+        im.alpha_composite(base, (int(x_right), int(y)))
+        seen += len(words)
+        y += spr.size[1] - 6
+    return y
+
+
 # ---------------------------------------------------------------- audio plan
 def vo_plan():
     raw = json.load(open(os.path.join(ASSETS, "vo", "trim.json")))
@@ -228,92 +306,67 @@ def scene1(t, dur):
     if q < 1:
         f = f.filter(ImageFilter.GaussianBlur((1 - q) * 6))
 
-    cx = 540
-    y1 = 1085
-    l1 = spr_ar("شحال من مرة قلتي لراسك:", 52, CREAM)
-    reveal(f, l1, cx, y1, clamp((t - 0.55) / 0.55, 0, 1), dy=34)
-
-    l2 = spr_ar("من غدا نبدّل؟", 100, GOLD)
-    p2 = clamp((t - 1.35) / 0.6, 0, 1)
-    sc = 1.0 + 0.22 * (1 - ease_out(p2)) + 0.02 * math.sin(t * 6.0) * clamp((t - 2.0) / 1.0, 0, 1)
-    put(f, l2, cx, y1 + 122, scale=sc, alpha=clamp(p2 * 1.6, 0, 1))
-    # gold flare on the punch
-    fl = clamp((t - 1.35) / 0.55, 0, 1)
-    if 0 < fl < 1:
-        a = int(120 * (1 - fl))
-        band = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        ImageDraw.Draw(band).rectangle([0, y1 + 70, W, y1 + 176], fill=GOLD + (a,))
-        f.alpha_composite(band.filter(ImageFilter.GaussianBlur(30)))
-
-    # underline swipe
-    pw = clamp((t - 2.05) / 0.45, 0, 1)
-    if pw > 0:
-        d = ImageDraw.Draw(f)
-        half = 300 * ease_out(pw)
-        d.line([(cx - half, y1 + 186), (cx + half, y1 + 186)], fill=GOLD + (110,), width=3)
-
-    l3 = spr_ar("ومن غدا، اللي هو اليوم…", 50, CREAM)
-    reveal(f, l3, cx, y1 + 258, clamp((t - 3.35) / 0.55, 0, 1), dy=30)
-    l4 = spr_ar("والو ما تبدّل.", 66, WHITE)
-    p4 = clamp((t - 4.55) / 0.5, 0, 1)
-    put(f, l4, cx, y1 + 348, scale=1.0 + 0.08 * (1 - ease_out(p4)), alpha=p4)
-
-    # dim everything slightly after the punchline
-    dim = clamp((t - 5.0) / 0.8, 0, 1) * 0.45
-    if dim > 0:
-        f.alpha_composite(Image.new("RGBA", (W, H), (4, 16, 12, int(255 * dim))))
-
-    # sign-off card: brand stamp
-    pst = clamp((t - 5.4) / 0.7, 0, 1)
+    # single dust-free brand stamp keeps the hook on-brand
+    pst = clamp((t - 0.9) / 0.7, 0, 1)
     if pst > 0:
-        s = spr_lat("@mizan.tracker", 34, GOLD_L, LAT_BOLD, tracking=2)
-        put(f, s, cx, 1660, alpha=pst)
+        s_ = spr_lat("@mizan.tracker", 30, GOLD_L, LAT_BOLD, tracking=2)
+        put(f, s_, 540, 1775, alpha=pst * 0.9)
 
     return finish(f, 120, 16)
+
+
+# b2 reference pose: laptop screen quad in source-image pixels (768x1376)
+B2_QUAD = [(525.1, 673.4), (744.2, 755.3), (671.3, 950.2), (452.2, 868.3)]
+
+
+def b2_corners(zoom, ox, oy):
+    img = bg("b2_laptop_desk.png")
+    iw, ih = img.size
+    cw, ch = W * zoom, H * zoom
+    sc_ = max(cw / iw, ch / ih)
+    nw, nh = cw / sc_, ch / sc_
+    x = clamp((iw - nw) / 2 + ox * iw, 0, iw - nw)
+    y = clamp((ih - nh) / 2 + oy * ih, 0, ih - nh)
+    k = W / nw
+    return [((px / 768.0 * iw - x) * k, (py / 1376.0 * ih - y) * k) for px, py in B2_QUAD]
+
+
+def screen_glow(frame, corners, palette_scale=0.20):
+    """Spill a soft pool of screen light on the desk around the laptop."""
+    xs = [c[0] for c in corners]
+    ys = [c[1] for c in corners]
+    cx, cy = sum(xs) / 4, sum(ys) / 4
+    w = (max(xs) - min(xs)) * 0.9
+    h = (max(ys) - min(ys)) * 0.9
+    gl = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(gl)
+    d.ellipse([cx - w, cy - h, cx + w, cy + h], fill=(210, 236, 214, int(80 * palette_scale / 0.2)))
+    gl = gl.filter(ImageFilter.GaussianBlur(90))
+    frame.alpha_composite(gl)
 
 
 def scene2(t, dur):
-    """PROBLEM — the issue isn't intention, it's following through."""
+    """PROBLEM — on the laptop (reference framing), screen carries the app,
+    with the big screenshot-style captions from the reference."""
     p = clamp(t / dur, 0, 1)
-    f = base_bg(bg("b2_laptop_desk.png"), dark=0.5,
-                zoom=lerp(1.05, 1.30, ease(p)), ox=lerp(0.04, -0.03, ease(p)), oy=0.02)
-    f.alpha_composite(gfx.scrim(W, H, from_top=False, h_frac=0.7, strength=235))
-    pattern_over(f, 10)
+    zoom = lerp(1.06, 1.20, ease(p))
+    ox = lerp(0.02, -0.03, ease(p))
+    oy = 0.01
+    f = base_bg(bg("b2_laptop_desk.png"), dark=0.30, zoom=zoom, ox=ox, oy=oy)
+    corners = b2_corners(zoom, ox, oy)
+
+    # app lives *inside* the laptop screen now
+    f.alpha_composite(gfx.scrim(W, H, from_top=True, h_frac=0.30, strength=110))
+    persp_paste(f, app_screen(), corners, brightness=1.02, alpha=0.98)
+    screen_glow(f, corners)
+
+    # darken the rest so the type reads
+    f.alpha_composite(gfx.scrim(W, H, from_top=False, h_frac=0.62, strength=215))
+    f.alpha_composite(gfx.scrim(W, H, from_top=True, h_frac=0.34, strength=120))
+    pattern_over(f, 9)
     cx = 540
 
-    a = spr_ar("المشكل ماشي فالنية.", 72, CREAM)
-    reveal(f, a, cx, 1210, clamp(t / 0.55, 0, 1), dy=44)
-    b = spr_ar("النية كاينة.", 52, (196, 214, 202))
-    reveal(f, b, cx, 1310, clamp((t - 1.35) / 0.5, 0, 1), dy=26)
-
-    # broken progress bar
-    pb = clamp((t - 2.2) / 0.7, 0, 1)
-    if pb > 0:
-        n = 8
-        seg_w, gap = 78, 14
-        total = n * seg_w + (n - 1) * gap
-        x0 = cx - total / 2
-        d = ImageDraw.Draw(f)
-        for i in range(n):
-            segp = clamp((pb * n - i) / 1.0, 0, 1)
-            if segp <= 0:
-                continue
-            filled = i < 5
-            col = GOLD if filled else (255, 255, 255)
-            xx = x0 + i * (seg_w + gap)
-            d.rounded_rectangle([xx, 1420, xx + seg_w * segp, 1434], radius=7,
-                                fill=col + ((255,) if filled else (46,)))
-        # the cut
-        cut = clamp((t - 3.3) / 0.5, 0, 1)
-        if cut > 0:
-            gxx = x0 + 5 * (seg_w + gap) - gap / 2
-            d.line([(gxx, 1390), (gxx, 1462)], fill=(250, 240, 225, int(220 * cut)), width=3)
-
-    c = spr_ar("المشكل فالمتابعة.", 86, GOLD)
-    pc = clamp((t - 3.55) / 0.55, 0, 1)
-    put(f, c, cx, 1610, scale=1.0 + 0.14 * (1 - ease_out(pc)), alpha=pc)
-
-    return finish(f, 120, 16)
+    return finish(f, 110, 16)
 
 
 def _homography(dst, src):
@@ -387,32 +440,18 @@ def screen_quad_paste(frame, ui, corners, brightness=1.0, alpha=1.0, blur=0.0):
 def scene3(t, dur):
     """REVEAL — the laptop, the product, a light sweep."""
     p = clamp(t / dur, 0, 1)
-    zoom = lerp(1.52, 1.30, ease(p))
-    ox = lerp(0.0, -0.02, ease(p))
-    oy = lerp(0.0, -0.035, ease(p))
-    f = base_bg(bg("b4_laptop_front.png"), dark=0.12, zoom=zoom, ox=ox, oy=oy)
+    zoom = lerp(1.34, 1.20, ease(p))
+    ox = lerp(-0.02, 0.0, ease(p))
+    oy = lerp(0.0, -0.02, ease(p))
+    f = base_bg(bg("b2_laptop_desk.png"), dark=0.22, zoom=zoom, ox=ox, oy=oy)
     pattern_over(f, 6)
-
-    # screen corners in the *cropped* frame coordinate space
-    def corners_for(zoom, ox, oy):
-        img = bg("b4_laptop_front.png")
-        iw, ih = img.size
-        cw, ch = W * zoom, H * zoom
-        sc_ = max(cw / iw, ch / ih)
-        nw, nh = cw / sc_, ch / sc_
-        x = clamp((iw - nw) / 2 + ox * iw, 0, iw - nw)
-        y = clamp((ih - nh) / 2 + oy * ih, 0, ih - nh)
-        k = W / nw
-        # quad corners in *original image* pixels -> normalised -> bg-image px
-        base = [(355.1, 602.0), (665.7, 654.0), (629.5, 870.4), (318.9, 818.5)]
-        return [((px / 768.0 * iw - x) * k, (py / 1376.0 * ih - y) * k) for px, py in base]
-
-    corners = corners_for(zoom, ox, oy)
+    corners = b2_corners(zoom, ox, oy)
 
     # screen switches on
     pon = clamp((t - 0.55) / 0.75, 0, 1)
     if pon > 0:
-        persp_paste(f, app_screen(), corners, brightness=0.95, alpha=ease(pon))
+        persp_paste(f, app_screen(), corners, brightness=0.98, alpha=ease(pon))
+        screen_glow(f, corners)
 
         # light sweep across the screen
         ps = clamp((t - 1.35) / 1.05, 0, 1)
@@ -431,18 +470,7 @@ def scene3(t, dur):
             gl.putalpha(Image.composite(gl.getchannel("A"), Image.new("L", (W, H), 0), mask))
             f.alpha_composite(gl)
 
-    # bottom type
-    f.alpha_composite(gfx.scrim(W, H, from_top=False, h_frac=0.42, strength=215))
-    cx = 540
-    p1 = clamp((t - 1.5) / 0.6, 0, 1)
-    a = spr_ar("هاذي هي ميزان تراكر", 78, WHITE)
-    put(f, a, cx, 1565, scale=1.0 + 0.06 * (1 - ease_out(p1)), alpha=p1)
-    p2 = clamp((t - 2.3) / 0.5, 0, 1)
-    b = spr_ar("صلاتك · أذكارك · وردك · أهدافك", 42, GOLD_L)
-    put(f, b, cx, 1655, alpha=p2, scale=1.0 + 0.02 * (1 - ease_out(p2)))
-    p3 = clamp((t - 3.1) / 0.5, 0, 1)
-    c = spr_ar("كلشي فبلاصة وحدة.", 46, CREAM)
-    put(f, c, cx, 1740, alpha=p3)
+    f.alpha_composite(gfx.scrim(W, H, from_top=False, h_frac=0.46, strength=200))
 
     # push into the screen for the cut
     pp = clamp((t - (dur - 1.05)) / 1.05, 0, 1)
@@ -535,15 +563,6 @@ def scene4(t, dur):
     def pt(px, py):
         return (bx + px * k, by + py * (bh / 1000.0))
 
-    # ---- persistent label at the top
-    labels = [(0.0, "واجهة وحدة، كلشي فيها"), (4.3, "نسبة التوازن"), (6.8, "صلاتك"),
-              (9.0, "سلسلة الأيام")]
-    for i, (t0, txt) in enumerate(labels):
-        t1 = labels[i + 1][0] if i + 1 < len(labels) else dur + 1
-        if t0 <= t < t1:
-            fade = clamp((t - t0) / 0.35, 0, 1) * clamp((t1 - t) / 0.3, 0, 1)
-            chip(f, txt, 540, 250, alpha=fade)
-
     # ---- live ring (percentage climbs)
     t_ring = clamp((t - 4.3) / 2.4, 0, 1)
     if t_ring > 0:
@@ -590,10 +609,10 @@ def scene5(t, dur):
         p5 = clamp((t - 0.1) / 0.65, 0, 1)
         s = spr_lat("5", 430, GREEN, LAT_BLK)
         put(f, s, 430, 760, scale=1 + 0.10 * (1 - ease_out(p5)), alpha=p5)
-        s = spr_ar("دقايق", 118, GREEN)
-        put(f, s, 730, 700, alpha=clamp((t - 0.5) / 0.5, 0, 1))
-        s = spr_ar("فالنهار", 82, GOLD_D)
-        put(f, s, 720, 810, alpha=clamp((t - 0.75) / 0.5, 0, 1))
+        s = spr_ar("دقايق", 112, GREEN)
+        put(f, s, 735, 705, alpha=clamp((t - 0.5) / 0.5, 0, 1))
+        s = spr_ar("فالنهار", 80, GOLD_D)
+        put(f, s, 725, 815, alpha=clamp((t - 0.75) / 0.5, 0, 1))
 
         # five anchors filling
         pdd = clamp((t - 1.4) / 1.7, 0, 1)
@@ -605,10 +624,6 @@ def scene5(t, dur):
             if filled:
                 d.line([(x - 10, 1030), (x - 2, 1039), (x + 11, 1021)], fill=CREAM, width=6)
 
-        s = spr_ar("و نتا شايف راسك كتقدّم.", 62, INK)
-        reveal(f, s, 540, 1220, clamp((t - 2.4) / 0.55, 0, 1), dy=34)
-        s = spr_ar("خمس دقايق. بصح.", 44, (126, 138, 124))
-        put(f, s, 540, 1330, alpha=clamp((t - 3.2) / 0.55, 0, 1))
 
         # soft card with the three anchors
         pc = clamp((t - 3.5) / 0.55, 0, 1)
@@ -625,7 +640,7 @@ def scene5(t, dur):
                 t_ = spr_ar(it, 38, INK)
                 card.alpha_composite(t_, (86, int(yy - t_.size[1] / 2)))
                 dc.ellipse([806, yy - 6, 818, yy + 6], fill=(198, 190, 168, 255))
-            put(f, card, 540, 1540, scale=1 + 0.06 * (1 - ease_out(pc)), alpha=pc)
+            put(f, card, 540, 1620, scale=1 + 0.06 * (1 - ease_out(pc)), alpha=pc)
         return finish(f, 50, 10)
 
     # ---------- competition beat ----------
@@ -636,13 +651,11 @@ def scene5(t, dur):
     d.rectangle([0, H - 10, W, H], fill=GREEN)
     pattern_over(f, 6)
 
-    s = spr_ar("و كل شهر…", 50, (128, 140, 126))
-    put(f, s, 540, 470, alpha=clamp(tt / 0.28, 0, 1))
-    s = spr_ar("منافسة", 124, GREEN)
-    put(f, s, 540, 600, alpha=clamp((tt - 0.12) / 0.3, 0, 1),
+    s = spr_ar("منافسة", 138, GREEN)
+    put(f, s, 540, 520, alpha=clamp((tt - 0.12) / 0.3, 0, 1),
         scale=1 + 0.06 * (1 - ease_out(clamp(tt / 0.7, 0, 1))))
-    s = spr_ar("شهر مجاني ديال ميزان برو", 60, INK)
-    put(f, s, 540, 740, alpha=clamp((tt - 0.55) / 0.4, 0, 1))
+    s = spr_ar("شهر مجاني ديال ميزان برو", 58, INK)
+    put(f, s, 540, 660, alpha=clamp((tt - 0.55) / 0.4, 0, 1))
 
     # gold ticket card
     pk = clamp((tt - 0.95) / 0.5, 0, 1)
@@ -656,9 +669,6 @@ def scene5(t, dur):
         lab = spr_lat("MIZAN PRO", 42, GOLD_L, SERIF, tracking=5)
         card.alpha_composite(lab, (int(430 - lab.size[0] / 2), 205))
         put(f, card, 540, 1010, scale=1 + 0.10 * (1 - ease_out(pk)), alpha=pk)
-
-    s = spr_ar("كون أول واحد فاللائحة.", 50, INK)
-    put(f, s, 540, 1275, alpha=clamp((tt - 1.75) / 0.45, 0, 1))
 
     # gold sparkles (deterministic)
     if tt > 0.95:
@@ -720,20 +730,9 @@ def scene6(t, dur):
         d.rounded_rectangle([0, 0, 899, 199], radius=34, outline=GOLD + (200,), width=3)
         u = spr_lat("mizantracker.online", 70, GREEN, LAT_BLK)
         card.alpha_composite(u, (int((900 - u.size[0]) / 2), 40))
-        sub = spr_ar("دخل دابا · مجاني", 34, GOLD_D)
-        card.alpha_composite(sub, (int((900 - sub.size[0]) / 2), 128))
+
         sc = 1 + 0.10 * (1 - ease_out(pu))
         put(f, card, cx, 1095, scale=sc, alpha=pu)
-
-    # arrow pointing down, pulsing
-    pa = clamp((t - 2.3) / 0.5, 0, 1)
-    if pa > 0:
-        bounce = 14 * math.sin((t - 2.3) * 4.0) if t > 2.3 else 0
-        d = ImageDraw.Draw(f)
-        ay = 1250 + bounce
-        d.line([(cx, ay), (cx, ay + 54)], fill=GOLD + (int(230 * pa),), width=7)
-        d.line([(cx - 24, ay + 30), (cx, ay + 56)], fill=GOLD + (int(230 * pa),), width=7)
-        d.line([(cx + 24, ay + 30), (cx, ay + 56)], fill=GOLD + (int(230 * pa),), width=7)
 
     # handle
     ph = clamp((t - 2.7) / 0.6, 0, 1)
@@ -747,6 +746,33 @@ def scene6(t, dur):
 
     return finish(f, 110, 15)
 
+
+# (absolute start, end, [[(word, gold), ...] per line])
+CAPTIONS = [
+    (0.55, 2.10, [[("شحال", 0), ("من", 0), ("مرة", 0)], [("قلتي", 1), ("لراسك:", 0)]]),
+    (2.10, 3.55, [[("من", 1), ("غدا", 1), ("نبدّل؟", 1)]]),
+    (3.55, 4.95, [[("ومن", 0), ("غدا،", 0)], [("اللي", 0), ("هو", 0), ("اليوم…", 1)]]),
+    (4.95, 7.55, [[("والو", 0), ("ما", 0)], [("تبدّل.", 1)]]),
+    (8.10, 9.60, [[("المشكل", 0), ("ماشي", 0)], [("فالنية.", 1)]]),
+    (9.60, 11.10, [[("النية", 0), ("كاينة.", 0)]]),
+    (11.10, 13.50, [[("المشكل", 1), ("فالمتابعة.", 1)]]),
+    (13.90, 16.40, [[("هاذي", 1), ("هي", 1)], [("ميزان", 0), ("تراكر", 0)]]),
+    (16.40, 18.60, [[("صلاتك", 0), ("·", 0), ("أذكارك", 0)], [("وردك", 0), ("·", 0), ("أهدافك", 0)]]),
+    (18.60, 20.90, [[("كلشي", 1), ("فبلاصة", 0), ("وحدة.", 0)]]),
+    (23.60, 25.60, [[("واجهة", 0), ("وحدة،", 0)], [("كلشي", 1), ("فيها", 1)]]),
+    (25.60, 28.20, [[("نسبة", 0), ("التوازن", 1)]]),
+    (28.20, 30.80, [[("و", 0), ("صلاة", 1), ("كتتسجل", 0)]]),
+    (30.80, 33.90, [[("سلسلة", 0), ("الأيام", 1)]]),
+    (34.30, 35.90, [[("غير", 0), ("خمس", 1), ("دقايق", 1)]]),
+    (35.90, 37.60, [[("فالنهار،", 0), ("ونتا", 0)], [("شايف", 1), ("راسك", 0)]]),
+    (37.60, 39.20, [[("كتقدّم.", 1)]]),
+    (39.20, 41.30, [[("و", 0), ("كل", 0), ("شهر…", 0)], [("منافسة!", 1)]]),
+    (41.30, 43.60, [[("شهر", 0), ("مجاني", 1)], [("ديال", 0), ("ميزان", 0), ("برو", 1)]]),
+    (43.90, 46.20, [[("دخل", 1), ("دابا", 0), ("لـ", 0)]]),
+    (46.20, 48.30, [[("mizantracker.online", 1)]]),
+    (48.30, 50.20, [[("وبدا", 0), ("نهارك", 1), ("الأول.", 0)]]),
+    (50.20, 52.90, [[("مجاني،", 0), ("وسهل،", 1)], [("وبلا", 0), ("تعقيد.", 0)]]),
+]
 
 SCENES = [scene1, scene2, scene3, scene4, scene5, scene6]
 
@@ -773,6 +799,16 @@ def cut_punch(im, tau, strength=0.045, dur=0.26):
     return big.crop((x, y, x + W, y + H))
 
 
+def caption_at(t, im):
+    for t0, t1, lines in CAPTIONS:
+        if t0 <= t < t1:
+            fade = min(1.0, (t - t0) / 0.10) * min(1.0, (t1 - t) / 0.10)
+            dy = (1 - ease_out(min(1.0, (t - t0) / 0.22))) * 24
+            rv = clamp((t - t0) / max(0.35, (t1 - t0) * 0.62), 0, 1)
+            subtitle(im, lines, alpha=fade, dy=dy, reveal=ease_out(rv))
+            break
+
+
 def render_frame(t, vo, bounds):
     for i in range(len(SCENES)):
         a, b = bounds[i], bounds[i + 1]
@@ -780,6 +816,7 @@ def render_frame(t, vo, bounds):
             im = SCENES[i](t - a, b - a)
             if i > 0:
                 im = cut_punch(im, t - a)
+            caption_at(t, im)
             return im.convert("RGB")
     return SCENES[-1](0.01, 1.0).convert("RGB")
 
