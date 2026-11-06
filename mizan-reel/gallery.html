@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mizan Tracker — Reels</title>
+<style>
+  :root{
+    --green:#0E3B2E; --green-d:#07241B; --cream:#F5F1E6; --gold:#E6C15C;
+    --gold-d:#C69E2C; --line:rgba(230,193,92,.28); --ink:#0B2018;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+    background:
+      radial-gradient(1200px 600px at 85% -10%, rgba(230,193,92,.16), transparent 60%),
+      radial-gradient(900px 700px at 0% 100%, rgba(255,255,255,.06), transparent 60%),
+      linear-gradient(160deg,#0A2C22,#07241B 55%,#051a13);
+    color:var(--cream);
+    min-height:100%;
+    padding:26px 22px 40px;
+  }
+  header{display:flex;align-items:center;gap:14px;margin:4px 0 22px}
+  .mark{width:46px;height:46px;border-radius:50%;background:#0F3E2F;display:grid;place-items:center;box-shadow:0 6px 20px rgba(0,0,0,.35)}
+  h1{font-size:19px;margin:0;letter-spacing:.02em}
+  .sub{font-size:12.5px;opacity:.62;margin-top:3px}
+  .pill{margin-inline-start:auto;font-size:11.5px;padding:7px 12px;border:1px solid var(--line);
+        border-radius:999px;color:var(--gold);background:rgba(230,193,92,.08)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(258px,1fr));gap:18px;max-width:1400px}
+  .card{background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:18px;
+        overflow:hidden;transition:.25s ease;backdrop-filter:blur(4px)}
+  .card:hover{transform:translateY(-3px);border-color:var(--line);box-shadow:0 18px 40px rgba(0,0,0,.35)}
+  .thumb{position:relative;aspect-ratio:9/16;background:#04150f;overflow:hidden;cursor:pointer}
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block;transition:.4s}
+  .card:hover .thumb img{transform:scale(1.04)}
+  .thumb video{width:100%;height:100%;object-fit:cover;display:block}
+  .badge{position:absolute;top:10px;inset-inline-start:10px;font-size:10.5px;letter-spacing:.06em;
+         padding:5px 9px;border-radius:999px;background:rgba(7,36,27,.82);color:var(--gold);
+         border:1px solid var(--line)}
+  .dur{position:absolute;bottom:10px;inset-inline-end:10px;font-size:11px;padding:4px 8px;
+       border-radius:8px;background:rgba(0,0,0,.62)}
+  .play{position:absolute;inset:0;display:grid;place-items:center;background:rgba(4,20,14,.18);
+        transition:.25s;opacity:1}
+  .play svg{filter:drop-shadow(0 6px 16px rgba(0,0,0,.5))}
+  .card:hover .play{background:rgba(4,20,14,.05)}
+  .meta{padding:12px 13px 14px}
+  .meta h3{font-size:13.5px;margin:0 0 4px;font-weight:600}
+  .meta p{font-size:11.5px;line-height:1.55;margin:0;opacity:.66}
+  .row{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap}
+  a.btn{font-size:11.5px;text-decoration:none;padding:7px 11px;border-radius:10px;
+        border:1px solid rgba(255,255,255,.16);color:var(--cream);background:rgba(255,255,255,.05)}
+  a.btn.primary{background:var(--gold);color:#2A1F04;border-color:transparent;font-weight:700}
+  a.btn:hover{filter:brightness(1.08)}
+  .tag{font-size:10.5px;opacity:.55;margin-top:8px;display:flex;gap:10px;flex-wrap:wrap}
+  .empty{border:1px dashed rgba(255,255,255,.18);border-radius:16px;padding:26px;font-size:13px;opacity:.7}
+  footer{margin-top:26px;font-size:11.5px;opacity:.42}
+</style>
+</head>
+<body>
+<header>
+  <div class="mark">
+    <svg width="26" height="26" viewBox="0 0 44 44">
+      <path d="M29.6 10.6a12.4 12.4 0 1 0 0 22.8 10.1 10.1 0 1 1 0-22.8z" fill="#E6C15C"/>
+      <circle cx="33" cy="13.4" r="2.1" fill="#E6C15C"/>
+    </svg>
+  </div>
+  <div>
+    <h1>Mizan Tracker — Reels</h1>
+    <div class="sub">النسخ اللي تصنعو فهاد الـ session · اضغط على الفيديو باش يتشغل</div>
+  </div>
+  <div class="pill" id="count">…</div>
+</header>
+
+<div class="grid" id="grid"></div>
+<footer>ملفّات الفيديو كاينة فـ <code>mizan-reel/out/</code> — كل نسخة جديدة كتزاد هنا أوتوماتيكياً.</footer>
+
+<script>
+const PLAY = `<svg width="54" height="54" viewBox="0 0 24 24" fill="none">
+  <circle cx="12" cy="12" r="11" fill="rgba(11,32,24,.62)" stroke="#E6C15C" stroke-width="1.4"/>
+  <path d="M10 8.2l6 3.8-6 3.8z" fill="#F5F1E6"/></svg>`;
+
+let data = {reels: []};
+const url = p => (!p || /^(https?:|data:)/.test(p)) ? p : 'out/' + p.replace(/^out\//, '');
+
+function card(r){
+  const el = document.createElement('div');
+  el.className = 'card';
+  el.innerHTML = `
+    <div class="thumb">
+      <img src="${url(r.poster)}" alt="${r.title}" loading="lazy">
+      <div class="badge">${r.ratio} · ${r.size}</div>
+      <div class="dur">${r.duration}</div>
+      <div class="play">${PLAY}</div>
+    </div>
+    <div class="meta">
+      <h3>${r.title}</h3>
+      <p>${r.subtitle || ''}</p>
+      <div class="tag"><span>${r.date || ''}</span><span>${r.vo || ''}</span></div>
+      <div class="row">
+        <a class="btn primary" href="${url(r.file)}" download>تحميل</a>
+        <a class="btn" href="${url(r.file)}" target="_blank" rel="noopener">فتح فـ تاب</a>
+      </div>
+    </div>`;
+  const thumb = el.querySelector('.thumb');
+  thumb.addEventListener('click', () => {
+    if (thumb.querySelector('video')) return;
+    const v = document.createElement('video');
+    v.src = url(r.preview || r.file);
+    v.controls = true; v.autoplay = true; v.playsInline = true; v.loop = true;
+    thumb.innerHTML = '';
+    thumb.appendChild(v);
+  });
+  return el;
+}
+
+async function boot(){
+  try{
+    const res = await fetch('out/gallery.json', {cache:'no-store'});
+    data = await res.json();
+  }catch(e){ data = {reels: []}; }
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  if(!data.reels.length){
+    grid.innerHTML = '<div class="empty">ما كاين حتى ريل دابا.</div>';
+  }else{
+    data.reels.forEach(r => grid.appendChild(card(r)));
+  }
+  document.getElementById('count').textContent = `${data.reels.length} reels`;
+}
+boot();
+</script>
+</body>
+</html>

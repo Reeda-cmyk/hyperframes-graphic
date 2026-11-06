@@ -3,3 +3,4 @@ out/video_raw.mp4
 out/still_*.png
 assets/vo/trim/
 out/mix.wav
+out/versions/*.mp4
